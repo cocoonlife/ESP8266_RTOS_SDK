@@ -127,6 +127,10 @@ typedef enum {
 } SpiFlashOpResult;
 
 extern SpiFlashOpResult SPIRead(uint32_t addr, void *dst, uint32_t size);
+SpiFlashOpResult SPIUnlock();
+SpiFlashOpResult SPIWrite(uint32_t addr, const void *src, uint32_t size);
+SpiFlashOpResult SPIEraseBlock(uint32_t block_num);
+SpiFlashOpResult SPIEraseSector(uint32_t sector_num);
 extern int ets_printf(const char* fmt, ...);
 extern void *ets_memcpy(void *restrict to, const void *restrict from, size_t size);
 
@@ -181,6 +185,101 @@ unsigned int gen_bin_addr(unsigned char* buf)
     ret = buf[2] << 16 | buf[1] << 8 | buf[0];
 
     return ret;
+}
+
+#define UPGRADE_HEADER_SEC 128
+#define UPGRADE_MAGIC 0xc0c0017
+
+struct upgrade_header {
+    uint32_t magic;
+    uint32_t address;
+    uint32_t length;
+};
+
+#define UBS 256
+static uint8_t upgrade_buf[UBS];
+static uint8_t upgrade_buf2[UBS];
+
+void software_reset();
+
+
+static void check_match(uint32_t addr, uint8_t *src, uint8_t *dest, int len){
+    while (len > 0) {
+        if (*src != *dest) {
+            ets_printf("mismatch @ %08x (%02x != %02x)\n", addr, *src, *dest);
+        }
+        src++;
+        dest++;
+        addr++;
+        len--;
+    }
+}
+
+static void copy_flash(uint32_t dest, uint32_t src, uint32_t len)
+{
+    int n;
+    uint32_t *p;
+    int i;
+    uint32_t val;
+
+    ets_printf("Unlocking flash\n");
+    SPIUnlock();
+    ets_printf("Copying\n");
+    val = 0;
+    while (len > 0) {
+        if (len > UBS) {
+            n = UBS;
+        } else {
+            n = len;
+        }
+        if ((dest % SPI_SEC_SIZE) == 0) {
+            SPIEraseSector(dest / SPI_SEC_SIZE);
+        }
+        SPIRead(src, upgrade_buf, n);
+        for (p = (uint32_t *)upgrade_buf, i = 0; i < n / 4; i++) {
+            val ^= p[i];
+        }
+        SPIWrite(dest, upgrade_buf, n);
+        SPIRead(dest, upgrade_buf2, n);
+        check_match(dest, upgrade_buf, upgrade_buf2, n);
+        src += n;
+        dest += n;
+        len -= n;
+    }
+    ets_printf("Image parity: %08x\n", val);
+}
+
+static void verify(uint32_t addr, int len)
+{
+    uint32_t result = 0;
+    uint32_t val;
+
+    while (len > 0) {
+        SPIRead(addr, &val, 4);
+        result ^= val;
+        addr += 4;
+        len -= 4;
+    }
+    ets_printf("Verified parity: %08x\n", result);
+}
+
+static void check_upgrade(void)
+{
+    struct upgrade_header hdr;
+
+    ets_printf("Checking for upgrade\n");
+    SPIRead(UPGRADE_HEADER_SEC * SPI_SEC_SIZE, &hdr, sizeof(hdr));
+    if (hdr.magic == UPGRADE_MAGIC) {
+        ets_printf("Installing upgrade image %08x @ %08x\n",
+                   hdr.length, hdr.address);
+        copy_flash(CONFIG_PARTITION_TABLE_CUSTOM_APP_BIN_OFFSET,
+                   hdr.address, hdr.length);
+        ets_printf("Erasing header\n");
+        SPIEraseSector(UPGRADE_HEADER_SEC);
+        verify(CONFIG_PARTITION_TABLE_CUSTOM_APP_BIN_OFFSET, hdr.length);
+    } else {
+        ets_printf("Upgrade magic not found\n");
+    }
 }
 
 void call_start_cpu(void)
@@ -289,6 +388,8 @@ void call_start_cpu(void)
             ets_printf("4Mbit\n");
             break;
     }
+
+    check_upgrade();
 
     SPIRead((sys_start + WIFI_PARAM_FLAG) * SPI_SEC_SIZE,
             (unsigned int*)&shdr, sizeof(struct save_hdr));

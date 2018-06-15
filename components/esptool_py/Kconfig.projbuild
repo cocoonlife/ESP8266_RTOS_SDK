@@ -103,6 +103,8 @@ choice ESPTOOLPY_FLASHSIZE
 	help
 		SPI flash size, in megabytes
 
+config ESPTOOLPY_FLASHSIZE_1MB
+	bool "1 MB"
 config ESPTOOLPY_FLASHSIZE_2MB_C1
 	bool "2 MB"
 config ESPTOOLPY_FLASHSIZE_4MB_C1
@@ -115,10 +117,16 @@ endchoice
 
 config ESPTOOLPY_FLASHSIZE
 	string
+	default "1MB" if ESPTOOLPY_FLASHSIZE_1MB
 	default "2MB-c1" if ESPTOOLPY_FLASHSIZE_2MB_C1
 	default "4MB-c1" if ESPTOOLPY_FLASHSIZE_4MB_C1
 	default "8MB" if ESPTOOLPY_FLASHSIZE_8MB
 	default "16MB" if ESPTOOLPY_FLASHSIZE_16MB
+
+config ESPTOOLPY_IMAGE_END
+	hex
+	default 0x80000 if ESPTOOLPY_FLASHSIZE_1MB
+	default 0x100000 if !ESPTOOLPY_FLASHSIZE_1MB
 
 choice ESPTOOLPY_BEFORE
     prompt "Before flashing"

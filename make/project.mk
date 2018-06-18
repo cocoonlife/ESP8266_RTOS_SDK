@@ -13,7 +13,7 @@
 .PHONY: build-components menuconfig defconfig all build clean all_binaries check-submodules size size-components size-files size-symbols list-components
 
 MAKECMDGOALS ?= all
-all: all_binaries
+all: all_binaries size
 # see below for recipe of 'all' target
 #
 # # other components will add dependencies to 'all_binaries'. The

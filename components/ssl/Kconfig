@@ -39,6 +39,10 @@ config MBEDTLS_SSL_MAX_CONTENT_LEN
         handshake or a return value of MBEDTLS_ERR_SSL_INVALID_RECORD
         (-0x7200).
 
+config MBEDTLS_ERROR_C
+   bool "Human readable error strings (mbed_strerror)"
+   default n
+
 config MBEDTLS_DEBUG
    bool "Enable mbedTLS debugging"
    default n
